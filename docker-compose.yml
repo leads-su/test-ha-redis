@@ -1,116 +1,87 @@
 version: '3.7'
 
 networks:
-  app-tier:
+  redis-network:
     driver: bridge
-    ipam:
-      driver: default
-      config:
-        - subnet: 172.19.0.1/24
-
-volumes:
-  redis-insight:
 
 services:
   redis-master:
-    image: 'bitnami/redis:latest'
-    environment:
-      - REDIS_REPLICATION_MODE=master
-      - REDIS_PASSWORD=str0ng_passw0rd
+    image: 'redis:7.2'
+    container_name: redis-master
+    volumes:
+      - ./redis-master.conf:/usr/local/etc/redis/redis.conf
+    command: [ "redis-server", "/usr/local/etc/redis/redis.conf" ]
     networks:
-      app-tier:
-        ipv4_address: 172.19.0.10
-    ports:
-      - '5001:6379'
-
-  redis-slave0:
-    image: 'bitnami/redis:latest'
-    environment:
-      - REDIS_REPLICATION_MODE=slave
-      - REDIS_MASTER_HOST=172.19.0.10
-      - REDIS_MASTER_PASSWORD=str0ng_passw0rd
-      - REDIS_PASSWORD=str0ng_passw0rd
-    ports:
-      - '5002:6379'
-    depends_on:
-      - redis-master
-    networks:
-      app-tier:
-        ipv4_address: 172.19.0.11
+      - redis-network
 
   redis-slave1:
-    image: 'bitnami/redis:latest'
-    environment:
-      - REDIS_REPLICATION_MODE=slave
-      - REDIS_MASTER_HOST=172.19.0.10
-      - REDIS_MASTER_PASSWORD=str0ng_passw0rd
-      - REDIS_PASSWORD=str0ng_passw0rd
-    ports:
-      - '5003:6379'
+    image: 'redis:7.2'
+    container_name: redis-slave1
     depends_on:
       - redis-master
+    volumes:
+      - ./redis-slave.conf:/usr/local/etc/redis/redis.conf
+    command: [ "redis-server", "/usr/local/etc/redis/redis.conf" ]
     networks:
-      app-tier:
-        ipv4_address: 172.19.0.12
+      - redis-network
+
+  redis-slave2:
+    image: 'redis:7.2'
+    container_name: redis-slave2
+    depends_on:
+      - redis-master
+    volumes:
+      - ./redis-slave.conf:/usr/local/etc/redis/redis.conf
+    command: [ "redis-server", "/usr/local/etc/redis/redis.conf" ]
+    networks:
+      - redis-network
 
   redis-sentinel1:
-    image: 'bitnami/redis-sentinel:latest'
-    environment:
-      - REDIS_MASTER_HOST=172.19.0.10
-      - REDIS_MASTER_PASSWORD=str0ng_passw0rd
-      - REDIS_MASTER_SET=mymaster
-      - REDIS_SENTINEL_QUORUM=2
-      - REDIS_SENTINEL_DOWN_AFTER_MILLISECONDS=10000
+    image: 'redis:7.2'
+    container_name: redis-sentinel1
     depends_on:
       - redis-master
-      - redis-slave0
       - redis-slave1
-    ports:
-      - '26379:26379'
+      - redis-slave2
+    volumes:
+      - ./redis-sentinel.conf:/usr/local/etc/redis/redis-sentinel.conf
+    command: [ "redis-sentinel", "/usr/local/etc/redis/redis-sentinel.conf" ]
     networks:
-      app-tier:
-        ipv4_address: 172.19.0.20
+      - redis-network
 
   redis-sentinel2:
-    image: 'bitnami/redis-sentinel:latest'
-    environment:
-      - REDIS_MASTER_HOST=172.19.0.10
-      - REDIS_MASTER_PASSWORD=str0ng_passw0rd
-      - REDIS_MASTER_SET=mymaster
-      - REDIS_SENTINEL_QUORUM=2
-      - REDIS_SENTINEL_DOWN_AFTER_MILLISECONDS=10000
+    image: 'redis:7.2'
+    container_name: redis-sentinel2
     depends_on:
       - redis-master
-      - redis-slave0
       - redis-slave1
-    ports:
-      - '26380:26379'
+      - redis-slave2
+    volumes:
+      - ./redis-sentinel.conf:/usr/local/etc/redis/redis-sentinel.conf
+    command: [ "redis-sentinel", "/usr/local/etc/redis/redis-sentinel.conf" ]
     networks:
-      app-tier:
-        ipv4_address: 172.19.0.21
+      - redis-network
 
   redis-sentinel3:
-    image: 'bitnami/redis-sentinel:latest'
-    environment:
-      - REDIS_MASTER_HOST=172.19.0.10
-      - REDIS_MASTER_PASSWORD=str0ng_passw0rd
-      - REDIS_MASTER_SET=mymaster
-      - REDIS_SENTINEL_QUORUM=2
-      - REDIS_SENTINEL_DOWN_AFTER_MILLISECONDS=10000
+    image: 'redis:7.2'
+    container_name: redis-sentinel3
     depends_on:
       - redis-master
-      - redis-slave0
       - redis-slave1
-    ports:
-      - '26381:26379'
+      - redis-slave2
+    volumes:
+      - ./redis-sentinel.conf:/usr/local/etc/redis/redis-sentinel.conf
+    command: [ "redis-sentinel", "/usr/local/etc/redis/redis-sentinel.conf" ]
     networks:
-      app-tier:
-        ipv4_address: 172.19.0.22
+      - redis-network
   
   redis-commander:
     image: rediscommander/redis-commander:latest
+    container_name: redis-commander
     environment:
-      - REDIS_HOSTS=redis10:172.19.0.10:6379:0:str0ng_passw0rd,redis11:172.19.0.11:6379:0:str0ng_passw0rd,redis12:172.19.0.12:6379:0:str0ng_passw0rd
+      - REDIS_HOSTS=redis-master:redis-master:6379:0:str0ng_passw0rd,redis-slave1:redis-slave1:6379:0:str0ng_passw0rd,redis-slave2:redis-slave2:6379:0:str0ng_passw0rd
+      - SENTINELS=redis-sentinel1:26379,redis-sentinel2:26379,redis-sentinel3:26379
+      - REDIS_PASSWORD=str0ng_passw0rd
     depends_on:
       - redis-sentinel1
       - redis-sentinel2
@@ -118,5 +89,4 @@ services:
     ports:
       - "8088:8081"
     networks:
-      app-tier:
-        ipv4_address: 172.19.0.30
+      - redis-network
